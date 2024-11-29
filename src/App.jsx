@@ -23,8 +23,56 @@ function App() {
   }, []);
 
   const handleClear = () => setSentence("");
-  const handleDelete = () => setSentence((prev) => prev.slice(0, -1));
+
+  const handleDelete = () => {
+    const textarea = document.querySelector("textarea");
+    const { selectionStart, selectionEnd } = textarea;
+  
+    if (selectionStart === selectionEnd) {
+      // No selection, delete the character before the cursor
+      const updatedSentence =
+        sentence.slice(0, selectionStart - 1) + sentence.slice(selectionEnd);
+      setSentence(updatedSentence);
+  
+      // Move the cursor back one position
+      setTimeout(() => {
+        textarea.setSelectionRange(selectionStart - 1, selectionStart - 1);
+      }, 0);
+    } else {
+      // Delete the selected text
+      const updatedSentence =
+        sentence.slice(0, selectionStart) + sentence.slice(selectionEnd);
+      setSentence(updatedSentence);
+  
+      // Set the cursor at the end of the deleted selection
+      setTimeout(() => {
+        textarea.setSelectionRange(selectionStart, selectionStart);
+      }, 0);
+    }
+  };
+  
   const handleSpace = () => setSentence((prev) => prev + " ");
+  
+  const handleSpeak = () => {
+    if (!sentence.trim()) return; // Avoid speaking empty strings
+  
+    const utterance = new SpeechSynthesisUtterance(sentence);
+    const voices = speechSynthesis.getVoices();
+  
+    // Select a more natural voice if available
+    const humanLikeVoice = voices.find((voice) =>
+      ["Google US English", "Microsoft David Desktop - English (United States)"].includes(voice.name)
+    );
+  
+    // If a human-like voice is found, use it
+    if (humanLikeVoice) {
+      utterance.voice = humanLikeVoice;
+    }
+  
+    utterance.lang = "en-US"; // Set language
+    speechSynthesis.speak(utterance); // Speak the sentence
+  };
+  
 
   return (
     <div style={styles.container}>
@@ -41,7 +89,7 @@ function App() {
       </h2>
       <textarea
         value={sentence}
-        readOnly
+        onChange={(e) => setSentence(e.target.value)} // Editable text
         style={styles.textarea}
       ></textarea>
       <div style={styles.buttonContainer}>
@@ -53,6 +101,9 @@ function App() {
         </button>
         <button onClick={handleSpace} style={styles.button}>
           Space
+        </button>
+        <button onClick={handleSpeak} style={styles.button}>
+          Speak
         </button>
       </div>
     </div>
