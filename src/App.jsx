@@ -1,60 +1,102 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
+import "./App.css"; // We'll create this file next
 
 function App() {
   const [alphabet, setAlphabet] = useState("");
   const [sentence, setSentence] = useState("");
+  const [isDetecting, setIsDetecting] = useState(true);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [lastDetectedTime, setLastDetectedTime] = useState(null);
+  const textareaRef = useRef(null);
 
   // Fetch detected alphabet from backend
   useEffect(() => {
-    const interval = setInterval(() => {
-      axios
-        .get("http://localhost:8000/detect")
-        .then((response) => {
-          if (response.data.alphabet) {
-            setAlphabet(response.data.alphabet);
-            setSentence((prev) => prev + response.data.alphabet);
-          }
-        })
-        .catch((err) => console.error("Error fetching alphabet:", err));
-    }, 1000);
+    let interval;
+    
+    if (isDetecting) {
+      interval = setInterval(() => {
+        axios
+          .get("http://localhost:8000/detect")
+          .then((response) => {
+            if (response.data.alphabet) {
+              setAlphabet(response.data.alphabet);
+              setSentence((prev) => prev + response.data.alphabet);
+              setLastDetectedTime(Date.now());
+            }
+          })
+          .catch((err) => console.error("Error fetching alphabet:", err));
+      }, 1000);
+    }
 
     return () => clearInterval(interval);
-  }, []);
+  }, [isDetecting]);
 
-  const handleClear = () => setSentence("");
+  // Effect for fading out the detected letter animation
+  useEffect(() => {
+    if (lastDetectedTime) {
+      const timer = setTimeout(() => {
+        setLastDetectedTime(null);
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [lastDetectedTime]);
+
+  const handleClear = () => {
+    setSentence("");
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  };
 
   const handleDelete = () => {
-    const textarea = document.querySelector("textarea");
+    if (!textareaRef.current) return;
+    
+    const textarea = textareaRef.current;
     const { selectionStart, selectionEnd } = textarea;
   
     if (selectionStart === selectionEnd) {
       // No selection, delete the character before the cursor
-      const updatedSentence =
-        sentence.slice(0, selectionStart - 1) + sentence.slice(selectionEnd);
-      setSentence(updatedSentence);
-  
-      // Move the cursor back one position
-      setTimeout(() => {
-        textarea.setSelectionRange(selectionStart - 1, selectionStart - 1);
-      }, 0);
+      if (selectionStart > 0) {
+        const updatedSentence =
+          sentence.slice(0, selectionStart - 1) + sentence.slice(selectionEnd);
+        setSentence(updatedSentence);
+    
+        // Move the cursor back one position
+        setTimeout(() => {
+          textarea.setSelectionRange(selectionStart - 1, selectionStart - 1);
+        }, 0);
+      }
     } else {
       // Delete the selected text
       const updatedSentence =
         sentence.slice(0, selectionStart) + sentence.slice(selectionEnd);
       setSentence(updatedSentence);
-  
+    
       // Set the cursor at the end of the deleted selection
       setTimeout(() => {
         textarea.setSelectionRange(selectionStart, selectionStart);
       }, 0);
     }
+    
+    textarea.focus();
   };
   
-  const handleSpace = () => setSentence((prev) => prev + " ");
+  const handleSpace = () => {
+    setSentence((prev) => prev + " ");
+    if (textareaRef.current) {
+      const textarea = textareaRef.current;
+      const newPosition = sentence.length + 1;
+      
+      setTimeout(() => {
+        textarea.focus();
+        textarea.setSelectionRange(newPosition, newPosition);
+      }, 0);
+    }
+  };
   
   const handleSpeak = () => {
-    if (!sentence.trim()) return; // Avoid speaking empty strings
+    if (!sentence.trim() || isSpeaking) return;
   
     const utterance = new SpeechSynthesisUtterance(sentence);
     const voices = speechSynthesis.getVoices();
@@ -64,118 +106,126 @@ function App() {
       ["Google US English", "Microsoft David Desktop - English (United States)"].includes(voice.name)
     );
   
-    // If a human-like voice is found, use it
     if (humanLikeVoice) {
       utterance.voice = humanLikeVoice;
     }
   
-    utterance.lang = "en-US"; // Set language
-    speechSynthesis.speak(utterance); // Speak the sentence
+    utterance.lang = "en-US";
+    
+    // Add event listeners
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+    
+    speechSynthesis.speak(utterance);
   };
-  
+
+  const toggleDetection = () => {
+    setIsDetecting(!isDetecting);
+  };
 
   return (
-    <div style={styles.container}>
-      <h1 style={styles.header}>Hand Sign Detection</h1>
-      <div style={styles.videoWrapper}>
-        <img
-          src="http://localhost:8000/video_feed"
-          alt="Webcam Feed"
-          style={styles.video}
-        />
-      </div>
-      <h2 style={styles.detectedAlphabet}>
-        Detected Alphabet: <span style={styles.alphabet}>{alphabet}</span>
-      </h2>
-      <textarea
-        value={sentence}
-        onChange={(e) => setSentence(e.target.value)} // Editable text
-        style={styles.textarea}
-      ></textarea>
-      <div style={styles.buttonContainer}>
-        <button onClick={handleClear} style={styles.button}>
-          Clear
-        </button>
-        <button onClick={handleDelete} style={styles.button}>
-          Delete
-        </button>
-        <button onClick={handleSpace} style={styles.button}>
-          Space
-        </button>
-        <button onClick={handleSpeak} style={styles.button}>
-          Speak
-        </button>
-      </div>
+    <div className="app-container">
+      <header className="app-header">
+        <h1>Hand Sign Detector</h1>
+        <p className="subtitle">Translate hand gestures to text in real-time</p>
+      </header>
+      
+      <main className="app-main">
+        <section className="camera-section">
+          <div className="video-card">
+            <div className="video-header">
+              <h2>Camera Feed</h2>
+              <button 
+                className={`toggle-button ${isDetecting ? 'active' : ''}`}
+                onClick={toggleDetection}
+              >
+                {isDetecting ? 'Pause Detection' : 'Resume Detection'}
+              </button>
+            </div>
+            
+            <div className="video-wrapper">
+              <img
+                src="http://localhost:8000/video_feed"
+                alt="Webcam Feed"
+                className="video-feed"
+              />
+              {isDetecting && (
+                <div className="detection-indicator">
+                  <div className="pulse-ring"></div>
+                </div>
+              )}
+            </div>
+            
+            <div className={`detected-letter ${lastDetectedTime ? 'pop-in' : ''}`}>
+              {alphabet && (
+                <>
+                  <span className="letter-label">Detected:</span>
+                  <span className="letter-value">{alphabet}</span>
+                </>
+              )}
+            </div>
+          </div>
+        </section>
+        
+        <section className="text-section">
+          <div className="text-card">
+            <h2>Your Message</h2>
+            <textarea
+              ref={textareaRef}
+              value={sentence}
+              onChange={(e) => setSentence(e.target.value)}
+              className="text-input"
+              placeholder="Detected signs will appear here..."
+            ></textarea>
+            
+            <div className="button-container">
+              <button 
+                onClick={handleClear} 
+                className="action-button clear"
+                title="Clear all text"
+              >
+                <span className="button-icon">🗑️</span>
+                <span className="button-text">Clear</span>
+              </button>
+              
+              <button 
+                onClick={handleDelete} 
+                className="action-button delete"
+                title="Delete character"
+              >
+                <span className="button-icon">⌫</span>
+                <span className="button-text">Delete</span>
+              </button>
+              
+              <button 
+                onClick={handleSpace} 
+                className="action-button space"
+                title="Add space"
+              >
+                <span className="button-icon">␣</span>
+                <span className="button-text">Space</span>
+              </button>
+              
+              <button 
+                onClick={handleSpeak} 
+                className={`action-button speak ${isSpeaking ? 'speaking' : ''}`}
+                disabled={isSpeaking || !sentence.trim()}
+                title="Speak text"
+              >
+                <span className="button-icon">{isSpeaking ? '🔊' : '🔈'}</span>
+                <span className="button-text">{isSpeaking ? 'Speaking...' : 'Speak'}</span>
+              </button>
+            </div>
+          </div>
+        </section>
+      </main>
+      
+      <footer className="app-footer">
+        <p>Position your hand clearly in the camera feed for best detection results</p>
+      </footer>
     </div>
   );
 }
-
-const styles = {
-  container: {
-    fontFamily: "'Roboto', sans-serif",
-    padding: "20px",
-    textAlign: "center",
-    backgroundColor: "#f5f5f5",
-    minHeight: "100vh",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  header: {
-    fontSize: "2.5rem",
-    color: "#333",
-    marginBottom: "20px",
-  },
-  videoWrapper: {
-    border: "4px solid #333",
-    borderRadius: "10px",
-    overflow: "hidden",
-    marginBottom: "20px",
-  },
-  video: {
-    borderRadius: "10px",
-    width: "640px",
-    height: "480px",
-  },
-  detectedAlphabet: {
-    fontSize: "1.5rem",
-    color: "#555",
-    marginBottom: "10px",
-  },
-  alphabet: {
-    fontWeight: "bold",
-    color: "#007bff",
-  },
-  textarea: {
-    width: "80%",
-    height: "100px",
-    margin: "20px 0",
-    fontSize: "18px",
-    textAlign: "center",
-    border: "2px solid #ddd",
-    borderRadius: "10px",
-    padding: "10px",
-    boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
-    resize: "none",
-    backgroundColor: "#fff",
-  },
-  buttonContainer: {
-    display: "flex",
-    justifyContent: "center",
-    gap: "10px",
-  },
-  button: {
-    backgroundColor: "#007bff",
-    color: "#fff",
-    border: "none",
-    padding: "10px 20px",
-    fontSize: "1rem",
-    borderRadius: "5px",
-    cursor: "pointer",
-    boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
-    transition: "all 0.3s ease",
-  },
-};
 
 export default App;
